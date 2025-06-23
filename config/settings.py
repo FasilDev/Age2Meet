@@ -26,8 +26,9 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-)!vfws&7s1+)!=b*gwhx)
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
+# DEBUG = True  # Temporaire pour debug sur Render
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,age2meet-api.onrender.com', cast=lambda v: [s.strip() for s in v.split(',')])
+ALLOWED_HOSTS = ['*']  # Temporaire pour debug - à sécuriser en production
 
 
 # Application definition
