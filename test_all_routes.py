@@ -5,7 +5,7 @@ Script pour tester toutes les routes de l'API Age2Meet
 import requests
 import json
 
-BASE_URL = "http://127.0.0.1:8000/api"
+BASE_URL = "http://127.0.0.1:3000/api"  # Changez le port ici
 
 def test_register():
     """Test de l'inscription"""
