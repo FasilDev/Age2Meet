@@ -22,12 +22,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-)!vfws&7s1+)!=b*gwhx)3c%=q3a!b8t6yqrjb)es(j64(-p_m'
+SECRET_KEY = config('SECRET_KEY', default='django-insecure-)!vfws&7s1+)!=b*gwhx)3c%=q3a!b8t6yqrjb)es(j64(-p_m')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = ['*']  # En production, spécifiez vos domaines exacts
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1,age2meet-api.onrender.com', cast=lambda v: [s.strip() for s in v.split(',')])
 
 
 # Application definition
