@@ -313,9 +313,15 @@ class ContactView(APIView):
                 Q(contact=request.user, status='accepted')
             )
             
-            # Demandes en attente
+            # Demandes REÇUES (en attente)
             pending_requests = Contact.objects.filter(
                 contact=request.user,
+                status='pending'
+            )
+            
+            # Demandes ENVOYÉES (en attente)
+            sent_requests = Contact.objects.filter(
+                user=request.user,
                 status='pending'
             )
             
@@ -349,9 +355,29 @@ class ContactView(APIView):
                     'created_at': request_obj.created_at.isoformat(),
                 })
             
+            sent_requests_data = []
+            for request_obj in sent_requests:
+                sent_requests_data.append({
+                    'id': request_obj.id,
+                    'contact': {
+                        'id': request_obj.contact.id,
+                        'username': request_obj.contact.username,
+                        'first_name': request_obj.contact.first_name,
+                        'last_name': request_obj.contact.last_name,
+                        'email': request_obj.contact.email,
+                        'bio': request_obj.contact.profile.bio or '',
+                        'location': request_obj.contact.profile.location or '',
+                        'interests': request_obj.contact.profile.interests or '',
+                        'status': request_obj.contact.profile.status,
+                        'profile_picture': request_obj.contact.profile.profile_picture.url if request_obj.contact.profile.profile_picture else None,
+                    },
+                    'created_at': request_obj.created_at.isoformat(),
+                })
+            
             return Response({
                 'accepted_contacts': contacts_data,
-                'pending_requests': requests_data
+                'pending_requests': requests_data,
+                'sent_requests': sent_requests_data
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
@@ -372,26 +398,45 @@ class ContactView(APIView):
                 return Response({'error': 'Vous ne pouvez pas vous ajouter vous-même'}, 
                               status=status.HTTP_400_BAD_REQUEST)
             
-            # Vérifier si la relation existe déjà
-            existing = Contact.objects.filter(
+            # Vérifier si une relation active existe déjà (accepted ou pending)
+            existing_active = Contact.objects.filter(
                 Q(user=request.user, contact=contact_user) |
                 Q(user=contact_user, contact=request.user)
-            ).exists()
+            ).filter(status__in=['accepted', 'pending']).first()
             
-            if existing:
+            if existing_active:
                 return Response({'error': 'Relation déjà existante'}, 
                               status=status.HTTP_400_BAD_REQUEST)
             
-            contact = Contact.objects.create(
-                user=request.user,
+            # Chercher une relation declined qui pourrait être réactivée
+            existing_declined = Contact.objects.filter(
+                user=request.user, 
                 contact=contact_user,
-                status='pending'
-            )
+                status='declined'
+            ).first()
             
-            return Response({
-                'message': 'Demande d\'ami envoyée',
-                'contact_id': contact.id
-            }, status=status.HTTP_201_CREATED)
+            if existing_declined:
+                # Réactiver la relation declined
+                existing_declined.status = 'pending'
+                existing_declined.created_at = timezone.now()  # Mettre à jour la date
+                existing_declined.save()
+                
+                return Response({
+                    'message': 'Demande d\'ami renvoyée',
+                    'contact_id': existing_declined.id
+                }, status=status.HTTP_200_OK)
+            else:
+                # Créer une nouvelle relation
+                contact = Contact.objects.create(
+                    user=request.user,
+                    contact=contact_user,
+                    status='pending'
+                )
+                
+                return Response({
+                    'message': 'Demande d\'ami envoyée',
+                    'contact_id': contact.id
+                }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
