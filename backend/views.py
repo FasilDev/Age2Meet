@@ -17,7 +17,8 @@ from rest_framework.views import APIView
 import json
 from datetime import datetime, timedelta
 
-from .models import User, UserProfile, Contact, Message, Event, Review, TutorialVideo
+from .models import User, UserProfile, Contact, Message, Event, Review, TutorialVideo, Activity, ActivityRegistration, Notification, UserStatistics
+from .serializers import *
 
 # ===== VUES D'AUTHENTIFICATION =====
 
@@ -74,10 +75,17 @@ class LoginView(APIView):
             if user:
                 token, created = Token.objects.get_or_create(user=user)
                 
-                # Mettre à jour le statut en ligne
+                # Option 1: Ne pas forcer le statut - garder le statut précédent
+                # profile = user.profile
+                # profile.status = 'online'  # Commenté pour garder le statut choisi
+                # profile.save()
+                
+                # Option 2: Mettre 'online' seulement si c'était 'offline'
                 profile = user.profile
-                profile.status = 'online'
-                profile.save()
+                if profile.status == 'offline':
+                    profile.status = 'online'
+                    profile.save()
+                # Si c'était 'busy' ou 'away', on garde ce statut
                 
                 return Response({
                     'message': 'Connexion réussie',
@@ -98,10 +106,12 @@ class LogoutView(APIView):
     
     def post(self, request):
         try:
-            # Mettre à jour le statut hors ligne
+            # Option: Ne forcer 'offline' que si l'utilisateur était 'online'
             profile = request.user.profile
-            profile.status = 'offline'
-            profile.save()
+            if profile.status == 'online':
+                profile.status = 'offline'
+                profile.save()
+            # Si c'était 'busy' ou 'away', on garde ce statut même déconnecté
             
             # Supprimer le token
             request.user.auth_token.delete()
@@ -163,10 +173,36 @@ class ProfileView(APIView):
             profile.location = data.get('location', profile.location)
             profile.interests = data.get('interests', profile.interests)
             profile.status = data.get('status', profile.status)
+            
+            # Gérer l'upload de photo de profil
+            if 'profile_picture' in request.FILES:
+                profile.profile_picture = request.FILES['profile_picture']
+            
             profile.save()
             
-            return Response({'message': 'Profil mis à jour avec succès'}, 
-                          status=status.HTTP_200_OK)
+            # Retourner les données complètes du profil mis à jour
+            response_data = {
+                'message': 'Profil mis à jour avec succès',
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'date_of_birth': user.date_of_birth,
+                    'phone': user.phone,
+                },
+                'profile': {
+                    'bio': profile.bio,
+                    'location': profile.location,
+                    'interests': profile.interests,
+                    'status': profile.status,
+                    'profile_picture': profile.profile_picture.url if profile.profile_picture else None,
+                    'is_verified': profile.is_verified,
+                }
+            }
+            
+            return Response(response_data, status=status.HTTP_200_OK)
             
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -291,8 +327,13 @@ class ContactView(APIView):
                     'username': friend.username,
                     'first_name': friend.first_name,
                     'last_name': friend.last_name,
+                    'email': friend.email,
+                    'bio': friend.profile.bio or '',
+                    'location': friend.profile.location or '',
+                    'interests': friend.profile.interests or '',
                     'status': friend.profile.status,
                     'profile_picture': friend.profile.profile_picture.url if friend.profile.profile_picture else None,
+                    'contact_relation_id': contact.id,
                 })
             
             requests_data = []
@@ -309,7 +350,7 @@ class ContactView(APIView):
                 })
             
             return Response({
-                'contacts': contacts_data,
+                'accepted_contacts': contacts_data,
                 'pending_requests': requests_data
             }, status=status.HTTP_200_OK)
             
@@ -379,6 +420,36 @@ class ContactActionView(APIView):
             contact.save()
             
             return Response({'message': message}, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class ContactDeleteView(APIView):
+    """Vue pour supprimer/retirer un ami"""
+    permission_classes = [IsAuthenticated]
+    
+    def delete(self, request, contact_id):
+        """Supprimer une relation d'amitié"""
+        try:
+            # Chercher la relation dans les deux sens
+            contact = Contact.objects.filter(
+                Q(id=contact_id, user=request.user) |
+                Q(id=contact_id, contact=request.user)
+            ).first()
+            
+            if not contact:
+                return Response({'error': 'Contact non trouvé'}, 
+                              status=status.HTTP_404_NOT_FOUND)
+            
+            # Vérifier que l'utilisateur a le droit de supprimer cette relation
+            if contact.user != request.user and contact.contact != request.user:
+                return Response({'error': 'Non autorisé'}, 
+                              status=status.HTTP_403_FORBIDDEN)
+            
+            contact.delete()
+            
+            return Response({'message': 'Contact supprimé avec succès'}, 
+                          status=status.HTTP_200_OK)
             
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
@@ -547,6 +618,295 @@ class ReviewView(APIView):
                 'message': 'Avis soumis avec succès. Il sera vérifié avant publication.',
                 'review_id': review.id
             }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ===== VUES ACTIVITÉS =====
+
+class ActivityView(APIView):
+    """Vue pour gérer les activités Age2meet"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Récupérer les activités disponibles"""
+        try:
+            # Filtres optionnels
+            activity_type = request.GET.get('type')
+            location = request.GET.get('location')
+            date_from = request.GET.get('date_from')
+            date_to = request.GET.get('date_to')
+            
+            activities = Activity.objects.filter(is_active=True, date__gte=timezone.now())
+            
+            if activity_type:
+                activities = activities.filter(activity_type=activity_type)
+            if location:
+                activities = activities.filter(location__icontains=location)
+            if date_from:
+                activities = activities.filter(date__gte=datetime.fromisoformat(date_from))
+            if date_to:
+                activities = activities.filter(date__lte=datetime.fromisoformat(date_to))
+            
+            serializer = ActivitySerializer(activities, many=True, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def post(self, request):
+        """Créer une nouvelle activité (pour les organisateurs)"""
+        try:
+            serializer = ActivityCreateSerializer(data=request.data, context={'request': request})
+            if serializer.is_valid():
+                activity = serializer.save()
+                return Response({
+                    'message': 'Activité créée avec succès',
+                    'activity_id': activity.id
+                }, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class ActivityDetailView(APIView):
+    """Vue pour les détails d'une activité"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, activity_id):
+        """Récupérer les détails d'une activité"""
+        try:
+            activity = get_object_or_404(Activity, id=activity_id, is_active=True)
+            serializer = ActivitySerializer(activity, context={'request': request})
+            
+            # Ajouter la liste des participants
+            participants = ActivityRegistration.objects.filter(
+                activity=activity, 
+                status='confirmed'
+            ).select_related('user')
+            
+            participants_data = [{
+                'id': reg.user.id,
+                'username': reg.user.username,
+                'first_name': reg.user.first_name,
+                'last_name': reg.user.last_name,
+                'registration_date': reg.registration_date.isoformat(),
+            } for reg in participants]
+            
+            data = serializer.data
+            data['participants'] = participants_data
+            
+            return Response(data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class ActivityRegistrationView(APIView):
+    """Vue pour les inscriptions aux activités"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """S'inscrire à une activité"""
+        try:
+            activity_id = request.data.get('activity_id')
+            activity = get_object_or_404(Activity, id=activity_id, is_active=True)
+            
+            # Vérifier si l'activité n'est pas complète
+            if activity.is_full:
+                return Response({'error': 'Cette activité est complète'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+            
+            # Vérifier si l'utilisateur n'est pas déjà inscrit
+            if ActivityRegistration.objects.filter(user=request.user, activity=activity).exists():
+                return Response({'error': 'Vous êtes déjà inscrit à cette activité'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+            
+            # Créer l'inscription
+            registration = ActivityRegistration.objects.create(
+                user=request.user,
+                activity=activity,
+                notes=request.data.get('notes', ''),
+                status='confirmed'
+            )
+            
+            # Créer une notification pour l'organisateur
+            Notification.objects.create(
+                user=activity.organizer,
+                title='Nouvelle inscription',
+                message=f'{request.user.first_name} {request.user.last_name} s\'est inscrit à votre activité "{activity.title}"',
+                notification_type='activity_reminder',
+                related_object_id=activity.id
+            )
+            
+            return Response({
+                'message': 'Inscription réussie !',
+                'registration_id': registration.id
+            }, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def delete(self, request, registration_id):
+        """Annuler une inscription"""
+        try:
+            registration = get_object_or_404(
+                ActivityRegistration, 
+                id=registration_id, 
+                user=request.user
+            )
+            
+            # Vérifier que l'activité n'a pas encore eu lieu
+            if registration.activity.date < timezone.now():
+                return Response({'error': 'Impossible d\'annuler une inscription pour une activité passée'}, 
+                              status=status.HTTP_400_BAD_REQUEST)
+            
+            registration.status = 'cancelled'
+            registration.save()
+            
+            return Response({'message': 'Inscription annulée'}, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class UserActivityView(APIView):
+    """Vue pour les activités de l'utilisateur"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Récupérer les activités de l'utilisateur (inscrites et organisées)"""
+        try:
+            # Activités inscrites
+            registered_activities = ActivityRegistration.objects.filter(
+                user=request.user,
+                status='confirmed'
+            ).select_related('activity')
+            
+            # Activités organisées
+            organized_activities = Activity.objects.filter(
+                organizer=request.user,
+                is_active=True
+            )
+            
+            data = {
+                'registered_activities': [{
+                    'registration_id': reg.id,
+                    'registration_date': reg.registration_date.isoformat(),
+                    'notes': reg.notes,
+                    'activity': ActivitySerializer(reg.activity, context={'request': request}).data
+                } for reg in registered_activities],
+                'organized_activities': ActivitySerializer(organized_activities, many=True, context={'request': request}).data
+            }
+            
+            return Response(data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ===== VUES NOTIFICATIONS =====
+
+class NotificationView(APIView):
+    """Vue pour gérer les notifications"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Récupérer les notifications de l'utilisateur"""
+        try:
+            notifications = Notification.objects.filter(user=request.user)
+            serializer = NotificationSerializer(notifications, many=True)
+            
+            # Compter les notifications non lues
+            unread_count = notifications.filter(is_read=False).count()
+            
+            return Response({
+                'notifications': serializer.data,
+                'unread_count': unread_count
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+    def put(self, request, notification_id):
+        """Marquer une notification comme lue"""
+        try:
+            notification = get_object_or_404(Notification, id=notification_id, user=request.user)
+            notification.mark_as_read()
+            
+            return Response({'message': 'Notification marquée comme lue'}, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class NotificationMarkAllReadView(APIView):
+    """Vue pour marquer toutes les notifications comme lues"""
+    permission_classes = [IsAuthenticated]
+    
+    def put(self, request):
+        """Marquer toutes les notifications comme lues"""
+        try:
+            updated = Notification.objects.filter(
+                user=request.user, 
+                is_read=False
+            ).update(
+                is_read=True, 
+                read_at=timezone.now()
+            )
+            
+            return Response({
+                'message': f'{updated} notifications marquées comme lues'
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+# ===== VUES TABLEAU DE BORD =====
+
+class DashboardView(APIView):
+    """Vue pour le tableau de bord utilisateur"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """Récupérer les données du tableau de bord"""
+        try:
+            user = request.user
+            
+            # Statistiques utilisateur (créer si n'existe pas)
+            stats, created = UserStatistics.objects.get_or_create(user=user)
+            
+            # Activités à venir
+            upcoming_activities = Activity.objects.filter(
+                registrations__user=user,
+                registrations__status='confirmed',
+                date__gte=timezone.now(),
+                is_active=True
+            ).distinct()[:5]
+            
+            # Messages récents
+            recent_messages = Message.objects.filter(
+                Q(sender=user) | Q(receiver=user)
+            ).order_by('-created_at')[:10]
+            
+            # Demandes d'amis en attente
+            pending_requests = Contact.objects.filter(
+                contact=user,
+                status='pending'
+            )[:5]
+            
+            # Notifications récentes
+            recent_notifications = Notification.objects.filter(
+                user=user
+            )[:10]
+            
+            data = {
+                'user_stats': UserStatisticsSerializer(stats).data,
+                'upcoming_activities': ActivitySerializer(upcoming_activities, many=True, context={'request': request}).data,
+                'recent_messages': MessageSerializer(recent_messages, many=True).data,
+                'pending_requests': ContactSerializer(pending_requests, many=True).data,
+                'recent_notifications': NotificationSerializer(recent_notifications, many=True).data,
+                'unread_messages_count': Message.objects.filter(receiver=user, is_read=False).count(),
+                'unread_notifications_count': Notification.objects.filter(user=user, is_read=False).count(),
+            }
+            
+            return Response(data, status=status.HTTP_200_OK)
             
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)

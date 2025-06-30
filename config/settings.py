@@ -148,7 +148,12 @@ CORS_ALLOWED_ORIGINS = [
     "https://votre-frontend.vercel.app",  # Remplacez par votre domaine Vercel
     "http://localhost:3000",  # Pour le développement local
     "http://127.0.0.1:3000",
+    "http://localhost:5173",  # Pour Vite (React frontend)
+    "http://127.0.0.1:5173",
 ]
+
+# Ou pour le développement (moins sécurisé mais plus simple)
+CORS_ALLOW_ALL_ORIGINS = True
 
 # Configuration REST Framework
 REST_FRAMEWORK = {

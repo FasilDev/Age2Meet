@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, UserProfile, Contact, Message, Event, Review, TutorialVideo
+from .models import User, UserProfile, Contact, Message, Event, Review, TutorialVideo, Activity, ActivityRegistration, Notification, UserStatistics
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer pour le modèle User"""
@@ -141,7 +141,7 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = UserProfile
-        fields = ['first_name', 'last_name', 'phone', 'bio', 'location', 'interests', 'status']
+        fields = ['first_name', 'last_name', 'phone', 'bio', 'location', 'interests', 'status', 'profile_picture']
     
     def update(self, instance, validated_data):
         # Mettre à jour les champs utilisateur
@@ -155,4 +155,113 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
             setattr(instance, field, value)
         instance.save()
         
-        return instance 
+        return instance
+
+class ActivitySerializer(serializers.ModelSerializer):
+    """Serializer pour les activités"""
+    organizer = UserSerializer(read_only=True)
+    participants_count = serializers.ReadOnlyField()
+    is_full = serializers.ReadOnlyField()
+    available_spots = serializers.ReadOnlyField()
+    is_registered = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Activity
+        fields = ['id', 'title', 'description', 'activity_type', 'location', 'address', 
+                 'date', 'end_date', 'max_participants', 'price', 'difficulty', 
+                 'organizer', 'image', 'requirements', 'is_active', 'created_at', 
+                 'participants_count', 'is_full', 'available_spots', 'is_registered']
+        read_only_fields = ['id', 'created_at']
+    
+    def get_is_registered(self, obj):
+        """Vérifier si l'utilisateur actuel est inscrit à cette activité"""
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return ActivityRegistration.objects.filter(
+                user=request.user, 
+                activity=obj, 
+                status='confirmed'
+            ).exists()
+        return False
+
+class ActivityCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour créer une activité"""
+    class Meta:
+        model = Activity
+        fields = ['title', 'description', 'activity_type', 'location', 'address', 
+                 'date', 'end_date', 'max_participants', 'price', 'difficulty', 
+                 'image', 'requirements']
+    
+    def create(self, validated_data):
+        validated_data['organizer'] = self.context['request'].user
+        return super().create(validated_data)
+
+class ActivityRegistrationSerializer(serializers.ModelSerializer):
+    """Serializer pour les inscriptions aux activités"""
+    user = UserSerializer(read_only=True)
+    activity = ActivitySerializer(read_only=True)
+    
+    class Meta:
+        model = ActivityRegistration
+        fields = ['id', 'user', 'activity', 'status', 'registration_date', 
+                 'notes', 'rating', 'feedback']
+        read_only_fields = ['id', 'registration_date']
+
+class ActivityRegistrationCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour créer une inscription à une activité"""
+    activity_id = serializers.IntegerField()
+    
+    class Meta:
+        model = ActivityRegistration
+        fields = ['activity_id', 'notes']
+    
+    def create(self, validated_data):
+        activity_id = validated_data.pop('activity_id')
+        activity = Activity.objects.get(id=activity_id)
+        validated_data['activity'] = activity
+        validated_data['user'] = self.context['request'].user
+        return super().create(validated_data)
+
+class NotificationSerializer(serializers.ModelSerializer):
+    """Serializer pour les notifications"""
+    user = UserSerializer(read_only=True)
+    
+    class Meta:
+        model = Notification
+        fields = ['id', 'user', 'title', 'message', 'notification_type', 
+                 'is_read', 'action_url', 'related_object_id', 'created_at', 'read_at']
+        read_only_fields = ['id', 'created_at', 'read_at']
+
+class NotificationCreateSerializer(serializers.ModelSerializer):
+    """Serializer pour créer une notification"""
+    class Meta:
+        model = Notification
+        fields = ['title', 'message', 'notification_type', 'action_url', 'related_object_id']
+
+class UserStatisticsSerializer(serializers.ModelSerializer):
+    """Serializer pour les statistiques utilisateur"""
+    user = UserSerializer(read_only=True)
+    
+    class Meta:
+        model = UserStatistics
+        fields = ['user', 'activities_participated', 'events_created', 
+                 'messages_sent', 'friends_count', 'profile_views', 
+                 'join_date', 'last_activity']
+        read_only_fields = ['join_date', 'last_activity']
+
+class HomeDataSerializer(serializers.Serializer):
+    """Serializer pour les données de la page d'accueil"""
+    upcoming_activities = ActivitySerializer(many=True)
+    user_events = EventSerializer(many=True)
+    recent_contacts = ContactSerializer(many=True)
+    unread_messages_count = serializers.IntegerField()
+    unread_notifications_count = serializers.IntegerField()
+    user_statistics = UserStatisticsSerializer()
+
+class DashboardSerializer(serializers.Serializer):
+    """Serializer pour le tableau de bord utilisateur"""
+    user_profile = UserProfileSerializer()
+    upcoming_activities = ActivitySerializer(many=True)
+    recent_messages = MessageSerializer(many=True)
+    pending_contact_requests = ContactSerializer(many=True)
+    recent_notifications = NotificationSerializer(many=True) 

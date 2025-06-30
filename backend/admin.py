@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, UserProfile, Contact, Message, Event, Review, TutorialVideo
+from .models import User, UserProfile, Contact, Message, Event, Review, TutorialVideo, Activity, ActivityRegistration, Notification, UserStatistics
 
 # ===== ADMINISTRATION UTILISATEUR =====
 
@@ -173,6 +173,124 @@ class TutorialVideoAdmin(admin.ModelAdmin):
             'fields': ('order', 'is_active')
         }),
     )
+
+# ===== ADMINISTRATION ACTIVITÉS =====
+
+@admin.register(Activity)
+class ActivityAdmin(admin.ModelAdmin):
+    """Administration des activités Age2meet"""
+    list_display = ('title', 'activity_type', 'organizer', 'date', 'location', 'participants_count', 'max_participants', 'is_active')
+    list_filter = ('activity_type', 'difficulty', 'is_active', 'date', 'created_at')
+    search_fields = ('title', 'description', 'location', 'organizer__username')
+    ordering = ('-date',)
+    
+    fieldsets = (
+        ('Informations de base', {
+            'fields': ('title', 'description', 'activity_type', 'organizer')
+        }),
+        ('Lieu et date', {
+            'fields': ('location', 'address', 'date', 'end_date')
+        }),
+        ('Paramètres', {
+            'fields': ('max_participants', 'price', 'difficulty', 'requirements', 'image')
+        }),
+        ('Statut', {
+            'fields': ('is_active',)
+        }),
+    )
+    
+    readonly_fields = ('participants_count', 'created_at', 'updated_at')
+    
+    def participants_count(self, obj):
+        """Nombre de participants inscrits"""
+        return obj.participants_count
+    participants_count.short_description = 'Participants inscrits'
+
+class ActivityRegistrationInline(admin.TabularInline):
+    """Inline pour les inscriptions aux activités"""
+    model = ActivityRegistration
+    extra = 0
+    readonly_fields = ('registration_date',)
+    fields = ('user', 'status', 'registration_date', 'notes', 'rating')
+
+@admin.register(ActivityRegistration)
+class ActivityRegistrationAdmin(admin.ModelAdmin):
+    """Administration des inscriptions aux activités"""
+    list_display = ('user', 'activity', 'status', 'registration_date', 'rating')
+    list_filter = ('status', 'registration_date', 'activity__activity_type')
+    search_fields = ('user__username', 'activity__title')
+    ordering = ('-registration_date',)
+    
+    fieldsets = (
+        ('Inscription', {
+            'fields': ('user', 'activity', 'status', 'notes')
+        }),
+        ('Évaluation (après activité)', {
+            'fields': ('rating', 'feedback')
+        }),
+    )
+    
+    readonly_fields = ('registration_date',)
+
+# ===== ADMINISTRATION NOTIFICATIONS =====
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    """Administration des notifications"""
+    list_display = ('user', 'title', 'notification_type', 'is_read', 'created_at')
+    list_filter = ('notification_type', 'is_read', 'created_at')
+    search_fields = ('user__username', 'title', 'message')
+    ordering = ('-created_at',)
+    
+    fieldsets = (
+        ('Notification', {
+            'fields': ('user', 'title', 'message', 'notification_type')
+        }),
+        ('Paramètres', {
+            'fields': ('is_read', 'action_url', 'related_object_id')
+        }),
+    )
+    
+    readonly_fields = ('created_at', 'read_at')
+    
+    actions = ['mark_as_read', 'mark_as_unread']
+    
+    def mark_as_read(self, request, queryset):
+        """Action pour marquer comme lues"""
+        from django.utils import timezone
+        queryset.update(is_read=True, read_at=timezone.now())
+        self.message_user(request, f'{queryset.count()} notifications marquées comme lues.')
+    mark_as_read.short_description = 'Marquer comme lues'
+    
+    def mark_as_unread(self, request, queryset):
+        """Action pour marquer comme non lues"""
+        queryset.update(is_read=False, read_at=None)
+        self.message_user(request, f'{queryset.count()} notifications marquées comme non lues.')
+    mark_as_unread.short_description = 'Marquer comme non lues'
+
+# ===== ADMINISTRATION STATISTIQUES =====
+
+@admin.register(UserStatistics)
+class UserStatisticsAdmin(admin.ModelAdmin):
+    """Administration des statistiques utilisateur"""
+    list_display = ('user', 'activities_participated', 'events_created', 'messages_sent', 'friends_count', 'last_activity')
+    list_filter = ('join_date', 'last_activity')
+    search_fields = ('user__username', 'user__email')
+    ordering = ('-last_activity',)
+    
+    fieldsets = (
+        ('Utilisateur', {
+            'fields': ('user',)
+        }),
+        ('Statistiques d\'activité', {
+            'fields': ('activities_participated', 'events_created', 'messages_sent', 'friends_count', 'profile_views')
+        }),
+        ('Dates', {
+            'fields': ('join_date', 'last_activity')
+        }),
+    )
+    
+    readonly_fields = ('join_date', 'last_activity')
 
 # Enregistrer le modèle User personnalisé
 admin.site.register(User, UserAdmin)

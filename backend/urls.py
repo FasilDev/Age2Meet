@@ -19,9 +19,25 @@ urlpatterns = [
     # ===== CONTACTS =====
     path('contacts/', views.ContactView.as_view(), name='contacts'),
     path('contacts/<int:contact_id>/action/', views.ContactActionView.as_view(), name='contact_action'),
+    path('contacts/<int:contact_id>/', views.ContactDeleteView.as_view(), name='contact_delete'),
     
     # ===== AGENDA =====
     path('events/', views.EventView.as_view(), name='events'),
+    
+    # ===== ACTIVITÉS =====
+    path('activities/', views.ActivityView.as_view(), name='activities'),
+    path('activities/<int:activity_id>/', views.ActivityDetailView.as_view(), name='activity_detail'),
+    path('activities/register/', views.ActivityRegistrationView.as_view(), name='activity_register'),
+    path('activities/registration/<int:registration_id>/', views.ActivityRegistrationView.as_view(), name='activity_registration_cancel'),
+    path('user/activities/', views.UserActivityView.as_view(), name='user_activities'),
+    
+    # ===== NOTIFICATIONS =====
+    path('notifications/', views.NotificationView.as_view(), name='notifications'),
+    path('notifications/<int:notification_id>/read/', views.NotificationView.as_view(), name='notification_read'),
+    path('notifications/mark-all-read/', views.NotificationMarkAllReadView.as_view(), name='notifications_mark_all_read'),
+    
+    # ===== TABLEAU DE BORD =====
+    path('dashboard/', views.DashboardView.as_view(), name='dashboard'),
     
     # ===== ACCUEIL =====
     path('home/', views.HomeView.as_view(), name='home'),
