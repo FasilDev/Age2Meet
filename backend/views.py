@@ -155,57 +155,81 @@ class ProfileView(APIView):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
-    def put(self, request):
-        """Modifier les informations du profil"""
-        try:
-            user = request.user
-            profile = user.profile
-            data = request.data
-            
-            # Mettre à jour les informations utilisateur
-            user.first_name = data.get('first_name', user.first_name)
-            user.last_name = data.get('last_name', user.last_name)
-            user.phone = data.get('phone', user.phone)
-            user.save()
-            
-            # Mettre à jour le profil
-            profile.bio = data.get('bio', profile.bio)
-            profile.location = data.get('location', profile.location)
-            profile.interests = data.get('interests', profile.interests)
-            profile.status = data.get('status', profile.status)
-            
-            # Gérer l'upload de photo de profil
-            if 'profile_picture' in request.FILES:
-                profile.profile_picture = request.FILES['profile_picture']
-            
-            profile.save()
-            
-            # Retourner les données complètes du profil mis à jour
-            response_data = {
-                'message': 'Profil mis à jour avec succès',
-                'user': {
-                    'id': user.id,
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name,
-                    'date_of_birth': user.date_of_birth,
-                    'phone': user.phone,
-                },
-                'profile': {
-                    'bio': profile.bio,
-                    'location': profile.location,
-                    'interests': profile.interests,
-                    'status': profile.status,
-                    'profile_picture': profile.profile_picture.url if profile.profile_picture else None,
-                    'is_verified': profile.is_verified,
+        def put(self, request):
+            """Modifier les informations du profil"""
+            try:
+                user = request.user
+                profile = user.profile
+                data = request.data
+                
+                print(f"📤 Données reçues: {data}")
+                print(f"📤 Fichiers reçus: {request.FILES}")
+                
+                # Mettre à jour les informations utilisateur
+                user.first_name = data.get('first_name', user.first_name)
+                user.last_name = data.get('last_name', user.last_name)
+                user.phone = data.get('phone', user.phone)
+                user.save()
+                
+                # Mettre à jour le profil
+                profile.bio = data.get('bio', profile.bio)
+                profile.location = data.get('location', profile.location)
+                profile.interests = data.get('interests', profile.interests)
+                profile.status = data.get('status', profile.status)
+                
+                # Gérer l'upload de photo de profil
+                if 'profile_picture' in request.FILES:
+                    uploaded_file = request.FILES['profile_picture']
+                    print(f"📤 Fichier uploadé: {uploaded_file.name}")
+                    print(f"📤 Taille: {uploaded_file.size} bytes")
+                    print(f"📤 Type: {uploaded_file.content_type}")
+                    
+                    profile.profile_picture = uploaded_file
+                    profile.save()
+                    
+                    print(f"📁 Fichier sauvé à: {profile.profile_picture.path}")
+                    print(f"🔗 URL générée: {profile.profile_picture.url}")
+                    
+                    # Vérifier que le fichier existe physiquement
+                    import os
+                    if os.path.exists(profile.profile_picture.path):
+                        print(f"✅ Fichier physique existe: {profile.profile_picture.path}")
+                    else:
+                        print(f"❌ Fichier physique n'existe pas: {profile.profile_picture.path}")
+                
+                profile.save()
+                
+                # Retourner les données complètes
+                response_data = {
+                    'message': 'Profil mis à jour avec succès',
+                    'user': {
+                        'id': user.id,
+                        'username': user.username,
+                        'email': user.email,
+                        'first_name': user.first_name,
+                        'last_name': user.last_name,
+                        'date_of_birth': user.date_of_birth,
+                        'phone': user.phone,
+                    },
+                    'profile': {
+                        'bio': profile.bio,
+                        'location': profile.location,
+                        'interests': profile.interests,
+                        'status': profile.status,
+                        'profile_picture': profile.profile_picture.url if profile.profile_picture else None,
+                        'is_verified': profile.is_verified,
+                    }
                 }
-            }
-            
-            return Response(response_data, status=status.HTTP_200_OK)
-            
-        except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                
+                print(f"📦 Réponse envoyée: {response_data}")
+                
+                return Response(response_data, status=status.HTTP_200_OK)
+                
+            except Exception as e:
+                print(f"❌ Erreur: {e}")
+                import traceback
+                traceback.print_exc()
+                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # ===== VUES DE MESSAGERIE =====
 
