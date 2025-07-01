@@ -16,7 +16,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
 import json
 from datetime import datetime, timedelta
-
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .models import User, UserProfile, Contact, Message, Event, Review, TutorialVideo, Activity, ActivityRegistration, Notification, UserStatistics
 from .serializers import *
 
@@ -127,6 +127,9 @@ class ProfileView(APIView):
     """Vue pour gérer le profil utilisateur"""
     permission_classes = [IsAuthenticated]
     
+    # AJOUTEZ ces parsers pour accepter les fichiers
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    
     def get(self, request):
         """Récupérer les informations du profil"""
         try:
@@ -155,48 +158,58 @@ class ProfileView(APIView):
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
     
-        def put(self, request):
-            """Modifier les informations du profil"""
-            try:
-                user = request.user
-                profile = user.profile
-                data = request.data
+    def put(self, request):
+        """Modifier les informations du profil ET upload de photo"""
+        try:
+            user = request.user
+            profile = user.profile
+            
+            print(f"📤 Content-Type: {request.content_type}")
+            print(f"📤 Données reçues: {request.data}")
+            print(f"📤 Fichiers reçus: {request.FILES}")
+            
+            # Déterminer si c'est un upload de fichier ou une mise à jour de données
+            if 'profile_picture' in request.FILES:
+                # C'est un upload de photo
+                print("📸 Upload de photo détecté")
                 
-                print(f"📤 Données reçues: {data}")
-                print(f"📤 Fichiers reçus: {request.FILES}")
+                uploaded_file = request.FILES['profile_picture']
+                print(f"📤 Fichier: {uploaded_file.name}, Taille: {uploaded_file.size}, Type: {uploaded_file.content_type}")
+                
+                # Sauvegarder la photo
+                profile.profile_picture = uploaded_file
+                profile.save()
+                
+                print(f"✅ Photo sauvée: {profile.profile_picture.url}")
+                
+                # Retourner seulement les infos de profil mises à jour
+                response_data = {
+                    'message': 'Photo de profil mise à jour avec succès',
+                    'profile': {
+                        'bio': profile.bio,
+                        'location': profile.location,
+                        'interests': profile.interests,
+                        'status': profile.status,
+                        'profile_picture': profile.profile_picture.url if profile.profile_picture else None,
+                        'is_verified': profile.is_verified,
+                    }
+                }
+                
+            else:
+                # C'est une mise à jour de données textuelles
+                print("📝 Mise à jour de données textuelles")
                 
                 # Mettre à jour les informations utilisateur
-                user.first_name = data.get('first_name', user.first_name)
-                user.last_name = data.get('last_name', user.last_name)
-                user.phone = data.get('phone', user.phone)
+                user.first_name = request.data.get('first_name', user.first_name)
+                user.last_name = request.data.get('last_name', user.last_name)
+                user.phone = request.data.get('phone', user.phone)
                 user.save()
                 
                 # Mettre à jour le profil
-                profile.bio = data.get('bio', profile.bio)
-                profile.location = data.get('location', profile.location)
-                profile.interests = data.get('interests', profile.interests)
-                profile.status = data.get('status', profile.status)
-                
-                # Gérer l'upload de photo de profil
-                if 'profile_picture' in request.FILES:
-                    uploaded_file = request.FILES['profile_picture']
-                    print(f"📤 Fichier uploadé: {uploaded_file.name}")
-                    print(f"📤 Taille: {uploaded_file.size} bytes")
-                    print(f"📤 Type: {uploaded_file.content_type}")
-                    
-                    profile.profile_picture = uploaded_file
-                    profile.save()
-                    
-                    print(f"📁 Fichier sauvé à: {profile.profile_picture.path}")
-                    print(f"🔗 URL générée: {profile.profile_picture.url}")
-                    
-                    # Vérifier que le fichier existe physiquement
-                    import os
-                    if os.path.exists(profile.profile_picture.path):
-                        print(f"✅ Fichier physique existe: {profile.profile_picture.path}")
-                    else:
-                        print(f"❌ Fichier physique n'existe pas: {profile.profile_picture.path}")
-                
+                profile.bio = request.data.get('bio', profile.bio)
+                profile.location = request.data.get('location', profile.location)
+                profile.interests = request.data.get('interests', profile.interests)
+                profile.status = request.data.get('status', profile.status)
                 profile.save()
                 
                 # Retourner les données complètes
@@ -220,16 +233,15 @@ class ProfileView(APIView):
                         'is_verified': profile.is_verified,
                     }
                 }
-                
-                print(f"📦 Réponse envoyée: {response_data}")
-                
-                return Response(response_data, status=status.HTTP_200_OK)
-                
-            except Exception as e:
-                print(f"❌ Erreur: {e}")
-                import traceback
-                traceback.print_exc()
-                return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            
+            print(f"📦 Réponse: {response_data}")
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            print(f"❌ Erreur: {e}")
+            import traceback
+            traceback.print_exc()
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 # ===== VUES DE MESSAGERIE =====
 
