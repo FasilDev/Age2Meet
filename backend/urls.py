@@ -13,6 +13,9 @@ urlpatterns = [
     # ===== PROFIL =====
     path('profile/', views.ProfileView.as_view(), name='profile'),
     
+    # NOUVELLE ROUTE pour l'upload de photo (si solution 2)
+    path('profile/upload-picture/', views.ProfilePictureUploadView.as_view(), name='profile_picture_upload'),
+    
     # ===== MESSAGERIE =====
     path('messages/', views.MessageView.as_view(), name='messages'),
     
