@@ -16,8 +16,11 @@ services:
       - key: SECRET_KEY
         generateValue: true
     autoDeploy: true
-
-databases:
-  - name: age2meet-db
-    databaseName: age2meet
-    user: age2meet 
+    # AJOUTEZ CETTE SECTION pour les fichiers statiques
+    staticSites:
+      - buildCommand: echo "No build needed"
+        publishPath: media
+        routes:
+          - type: rewrite
+            source: /media/*
+            destination: /media/$1
