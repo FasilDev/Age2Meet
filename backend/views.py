@@ -991,3 +991,36 @@ class DashboardView(APIView):
             
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class ProfilePictureUploadView(APIView):
+    """Vue dédiée à l'upload de photo de profil"""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    
+    def post(self, request):
+        """Upload d'une nouvelle photo de profil"""
+        try:
+            if 'profile_picture' not in request.FILES:
+                return Response({'error': 'Aucun fichier fourni'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            uploaded_file = request.FILES['profile_picture']
+            
+            # Validations
+            if not uploaded_file.content_type.startswith('image/'):
+                return Response({'error': 'Le fichier doit être une image'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if uploaded_file.size > 5 * 1024 * 1024:  # 5MB
+                return Response({'error': 'L\'image ne doit pas dépasser 5MB'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Sauvegarder
+            profile = request.user.profile
+            profile.profile_picture = uploaded_file
+            profile.save()
+            
+            return Response({
+                'message': 'Photo de profil mise à jour avec succès',
+                'profile_picture': profile.profile_picture.url if profile.profile_picture else None
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
