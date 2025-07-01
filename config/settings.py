@@ -26,15 +26,13 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Configuration CORS - Ajoutez media à la liste
 CORS_ALLOWED_ORIGINS = [
-    "https://votre-frontend.vercel.app",
+    "https://age2meetfront.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
 
-# Pour la production
-CORS_ALLOW_ALL_ORIGINS = True  # Temporaire pour debug
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
